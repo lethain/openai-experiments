@@ -9,8 +9,10 @@ import re
 
 COMPLETIONS_MODEL = "text-davinci-003"
 EMBEDDING_MODEL = "text-embedding-ada-002"
-
-
+MAX_EMBEDDINGS = 1536
+EMBEDDINGS_CACHE = None
+EMBEDDINGS_CACHE_FILE = "embeddings.pkl"
+EMBEDDINGS_CSV = "embeddings.csv"
 
 
 def ask_prompt(prompt):
@@ -28,8 +30,44 @@ def ask_prompt(prompt):
     )["choices"][0]["text"].strip(" \n")
     return resp
 
+def vector_similarity(x: list[float], y: list[float]) -> float:
+    """
+    Returns the similarity between two vectors.
 
-def add_embeddings():
+    Because OpenAI Embeddings are normalized to length 1, the cosine similarity is the same as the dot product.
+    """
+    return np.dot(np.array(x), np.array(y))
+
+def order_document_sections_by_query_similarity(query: str, contexts: dict[(str, str), np.array]) -> list[(float, (str, str))]:
+    """
+    Find the query embedding for the supplied query, and compare it against all of the pre-calculated document embeddings
+    to find the most relevant sections.
+
+    Return the list of document sections, sorted by relevance in descending order.
+    """
+    query_embedding = get_embedding(query)
+    document_similarities = sorted([
+        (vector_similarity(query_embedding, doc_embedding), doc_index) for doc_index, doc_embedding in contexts.items()
+    ], reverse=True)
+    
+    return document_similarities
+
+
+def get_document_embeddings():
+    df = get_all_embeddings()
+    max_dim = max([int(c) for c in df.columns if c != "title" and c != "heading"])
+    return {
+        (r.title, r.heading): [r[str(i)] for i in range(max_dim + 1)] for _, r in df.iterrows()
+    }
+
+
+def get_all_embeddings():
+    try:
+        df = pd.read_csv(EMBEDDINGS_CSV, header=0)
+        return df
+    except Exception as e:
+        print("Couldn't read DF from disk", e)
+
     writing_directories = (
         '/Users/will/irrational_hugo/content',
         '/Users/will/infra-eng/content',
@@ -54,12 +92,20 @@ def add_embeddings():
     df = pd.DataFrame(rows, columns=['title', 'heading', 'content'])
     print(df.sample(5))
 
-    embeddings = compute_doc_embeddings(df[:10])
-    print(embeddings)
-    
+    embeddings = compute_doc_embeddings(df)
 
-EMBEDDINGS_CACHE = None
-EMBEDDINGS_CACHE_FILE = "embeddings.pkl"
+    cols = ('title', 'heading') + tuple(range(MAX_EMBEDDINGS))
+    export_rows = []
+    for emb in embeddings:
+        new_row = [emb['title'], emb['heading']]
+        for i in range(MAX_EMBEDDINGS):
+            new_row.append(emb['idx'][i])
+        export_rows.append(new_row)
+    export_df = pd.DataFrame(export_rows, columns=cols)
+    export_df.to_csv(EMBEDDINGS_CSV, index=False)
+
+    return export_df
+
 
 def get_embedding(text: str, model: str=EMBEDDING_MODEL) -> list[float]:
     global EMBEDDINGS_CACHE
@@ -90,12 +136,16 @@ def compute_doc_embeddings(df: pd.DataFrame) -> dict[tuple[str, str], list[float
     """
     rows = []
     for idx, r in df.iterrows():
-        row = {
-            'title': r.title,
-            'heading': r.heading,
-            'idx': get_embedding(r.content)
-        }
-        rows.append(row)
+        try:
+            row = {
+                'title': r.title,
+                'heading': r.heading,
+                'idx': get_embedding(r.content)
+            }
+            rows.append(row)
+        except openai.error.InvalidRequestError as ire:
+            print(r.title, r.heading, ire)
+
     return rows
 
 
@@ -155,7 +205,15 @@ if __name__ == "__main__":
 
     openai.api_key = api_key
 
-    add_embeddings()
+    document_embeddings = get_document_embeddings()
+    x = order_document_sections_by_query_similarity("How should I get an engineering executive job?", document_embeddings)[:5]
+    print(x)
+
+
+    #max_dim = max([int(c) for c in df.columns if c != "title" and c != "heading"])
+    #return {
+    #(r.title, r.heading): [r[str(i)] for i in range(max_dim + 1)] for _, r in df.iterrows()
+
 
     #resp = ask_prompt("What are 10 things I should do on a sunny day in San Francisco?")
     #print(resp)
