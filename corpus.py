@@ -37,24 +37,66 @@ def add_embeddings():
     )
     filepaths = get_filepaths(writing_directories)
 
-    # df = df.append({'Name': 'John', 'Age': 25, 'City': 'New York'}, ignore_index=True)
-
     rows = []
     for filepath in filepaths:
         try:
             headers, sections = clean_entry(filepath)
             for sect_title, sect_content in sections:
                 row = {
-                    'file': headers['filename'],
-                    'header': sect_title,
+                    'title': headers['filename'],
+                    'heading': sect_title,
                     'content': sect_content,
                 }
                 rows.append(row)
         except Exception as e:
             print(filepath, e)
 
-    df = pd.DataFrame(rows, columns=['file', 'header', 'content'])
-    print(df.head())
+    df = pd.DataFrame(rows, columns=['title', 'heading', 'content'])
+    print(df.sample(5))
+
+    embeddings = compute_doc_embeddings(df[:10])
+    print(embeddings)
+    
+
+EMBEDDINGS_CACHE = None
+EMBEDDINGS_CACHE_FILE = "embeddings.pkl"
+
+def get_embedding(text: str, model: str=EMBEDDING_MODEL) -> list[float]:
+    global EMBEDDINGS_CACHE
+    if EMBEDDINGS_CACHE is None:
+        try:
+            EMBEDDINGS_CACHE = pd.read_pickle(EMBEDDINGS_CACHE_FILE)
+        except (FileNotFoundError, EOFError):
+            EMBEDDINGS_CACHE = {}
+
+    key = (model, text)
+    if key not in EMBEDDINGS_CACHE:
+        result = openai.Embedding.create(
+            model=model,
+            input=text
+        )
+        EMBEDDINGS_CACHE[key] = result["data"][0]["embedding"]
+
+        with open(EMBEDDINGS_CACHE_FILE, "wb") as embedding_cache_file:
+            pickle.dump(EMBEDDINGS_CACHE, embedding_cache_file)
+
+    return EMBEDDINGS_CACHE[key]
+    
+
+def compute_doc_embeddings(df: pd.DataFrame) -> dict[tuple[str, str], list[float]]:
+    """
+    Create an embedding for each row in the dataframe using the OpenAI Embeddings API.
+    Return a dictionary that maps between each embedding vector and the index of the row that it corresponds to.
+    """
+    rows = []
+    for idx, r in df.iterrows():
+        row = {
+            'title': r.title,
+            'heading': r.heading,
+            'idx': get_embedding(r.content)
+        }
+        rows.append(row)
+    return rows
 
 
 def clean_entry(filepath):
