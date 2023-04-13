@@ -7,13 +7,13 @@ import tiktoken
 import re
 
 
-COMPLETIONS_MODEL = "text-davinci-003"
+COMPLETIONS_MODEL = "gpt-3.5-turbo"
 EMBEDDING_MODEL = "text-embedding-ada-002"
 MAX_EMBEDDINGS = 1536
 EMBEDDINGS_CACHE = None
 EMBEDDINGS_CACHE_FILE = "embeddings.pkl"
 EMBEDDINGS_CSV = "embeddings.csv"
-MAX_SECTION_LEN = 500
+MAX_SECTION_LEN = 1000
 SEPARATOR = "\n* "
 ENCODING = "gpt2"
 
@@ -28,7 +28,7 @@ def ask_contextful_prompt(prompt, embeddings):
     chosen_sections_len = 0
     chosen_sections_indexes = []
 
-    encoding = tiktoken.get_encoding(ENCODING)
+    encoding = tiktoken.encoding_for_model(COMPLETIONS_MODEL)
     separator_len = len(encoding.encode(SEPARATOR))
 
     # I am doing something dumb with df.loc which is breaing,
@@ -57,24 +57,16 @@ def ask_prompt(prompt, context=None):
     if context:
         context_str = f"\nContext:\n {context}"
 
-    templated_prompt = f"""Answer the question as truthfully as possible, and if you're unsure of the answer, say "Sorry, I don't know".
-    {context_str}
+    messages = [
+        {"role": "system", "content": "Answer the question as truthfully as possible, and if you're unsure of the answer, say 'Sorry, I don't know'. Cite your sources"},
+        {"role": "assistant", "content": context_str},
+        {"role": "user", "content": prompt},
+    ]
 
-    Q: {prompt}
+    resp = openai.ChatCompletion.create(messages=messages, model=COMPLETIONS_MODEL)
+    print(resp)
+    return resp['choices'][0]["message"]["content"]
 
-    Cite your sources.
-    A:
-    """
-
-    print("\n---\nfull prompt:\n",templated_prompt)
-
-    resp = openai.Completion.create(
-        prompt=templated_prompt,
-        temperature=0,
-        max_tokens=300,
-        model=COMPLETIONS_MODEL
-    )["choices"][0]["text"].strip(" \n")
-    return resp
 
 def vector_similarity(x: list[float], y: list[float]) -> float:
     """
@@ -143,6 +135,8 @@ def get_all_embeddings():
         print("Couldn't read DF from disk", e)
 
     df = build_corpus()
+    # TODO: consider reducing size of doc embeddings
+    # to be about 1,500 tokens max
     embeddings = compute_doc_embeddings(df)
 
     cols = ('title', 'heading') + tuple(range(MAX_EMBEDDINGS))
