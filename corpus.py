@@ -21,7 +21,8 @@ ENCODING = "gpt2"
 def ask_contextful_prompt(prompt, embeddings):
     print(f"supplied prompt: {prompt}")
     relevant = order_document_sections_by_query_similarity(prompt, embeddings)[:5]
-    print(f"relevant: {relevant}")
+    relevant_str = "\t*" + ("\n\t*".join([str(x) for x in relevant]))
+    print(f"relevant embeddings:\n{relevant_str}")
 
     chosen_sections = []
     chosen_sections_len = 0
@@ -65,7 +66,7 @@ def ask_prompt(prompt, context=None):
     A:
     """
 
-    print("\n",templated_prompt)
+    print("\n---\nfull prompt:\n",templated_prompt)
 
     resp = openai.Completion.create(
         prompt=templated_prompt,
@@ -217,7 +218,7 @@ def clean_entry(filepath):
             line = raw_line.strip()
             if ':' in line:
                 key, val = line.split(':', 1)
-                headings[key] = val.strip(" \"'")
+                headings[key.strip()] = val.strip(" \"'")
     else:
         body = raw
 
@@ -257,9 +258,9 @@ if __name__ == "__main__":
     document_embeddings = get_document_embeddings()
 
     prompts = [
-        "When should I promote internal canidates versus hiring externally?",
-        "How should I get an engineering executive job?",
         "What do staff engineers do?",
+        "When should I promote internal candidates versus hiring externally?",
+        "How should I get an engineering executive job?",
     ]
 
     for prompt in prompts[:1]:
