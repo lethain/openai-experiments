@@ -13,14 +13,59 @@ MAX_EMBEDDINGS = 1536
 EMBEDDINGS_CACHE = None
 EMBEDDINGS_CACHE_FILE = "embeddings.pkl"
 EMBEDDINGS_CSV = "embeddings.csv"
+MAX_SECTION_LEN = 500
+SEPARATOR = "\n* "
+ENCODING = "gpt2"
 
 
-def ask_prompt(prompt):
+def ask_contextful_prompt(prompt, embeddings):
+    relevant = order_document_sections_by_query_similarity(prompt, embeddings)[:5]
+    print("relevant", relevant)
+
+    chosen_sections = []
+    chosen_sections_len = 0
+    chosen_sections_indexes = []
+
+    encoding = tiktoken.get_encoding(ENCODING)
+    separator_len = len(encoding.encode(SEPARATOR))
+
+    # I am doing something dumb with df.loc which is breaing,
+    # so just working around with this for simplicity sake,
+    # probably because I was doing something silly earlier but tbh
+    # don't feel like reworking it :-)
+    df_context = build_corpus()    
+    by_key = { (r.title, r.heading): r for _, r in df_context.iterrows()}
+
+    
+    for _, section_index in relevant:
+        # Add contexts until we run out of space.
+        document_section = by_key[section_index]
+        tokens = len(encoding.encode(document_section.content))
+        chosen_sections_len += tokens + separator_len
+        if chosen_sections_len > MAX_SECTION_LEN:
+            break
+        chosen_sections.append(SEPARATOR + document_section.content.replace("\n", " "))
+        chosen_sections_indexes.append(str(section_index))
+        
+    return ask_prompt(prompt, context="".join(chosen_sections))
+
+
+def ask_prompt(prompt, context=None):
+
+    context_str = ""
+    if context:
+        context_str = f"\nContext:\n {context}"
+    
     templated_prompt = f"""Answer the question as truthfully as possible, and if you're unsure of the answer, say "Sorry, I don't know".
+    {context_str}
 
     Q: {prompt}
+
+    Cite your sources.
     A:
     """
+
+    print(templated_prompt)
 
     resp = openai.Completion.create(
         prompt=templated_prompt,
@@ -56,18 +101,13 @@ def order_document_sections_by_query_similarity(query: str, contexts: dict[(str,
 def get_document_embeddings():
     df = get_all_embeddings()
     max_dim = max([int(c) for c in df.columns if c != "title" and c != "heading"])
-    return {
+    embeddings = {
         (r.title, r.heading): [r[str(i)] for i in range(max_dim + 1)] for _, r in df.iterrows()
     }
+    return embeddings
 
 
-def get_all_embeddings():
-    try:
-        df = pd.read_csv(EMBEDDINGS_CSV, header=0)
-        return df
-    except Exception as e:
-        print("Couldn't read DF from disk", e)
-
+def build_corpus():
     writing_directories = (
         '/Users/will/irrational_hugo/content',
         '/Users/will/infra-eng/content',
@@ -90,8 +130,18 @@ def get_all_embeddings():
             print(filepath, e)
 
     df = pd.DataFrame(rows, columns=['title', 'heading', 'content'])
-    print(df.sample(5))
+    return df
 
+
+def get_all_embeddings():
+    try:
+        df = pd.read_csv(EMBEDDINGS_CSV, header=0)
+        df.set_index(["title", "heading"])
+        return df
+    except Exception as e:
+        print("Couldn't read DF from disk", e)
+
+    df = build_corpus()
     embeddings = compute_doc_embeddings(df)
 
     cols = ('title', 'heading') + tuple(range(MAX_EMBEDDINGS))
@@ -204,16 +254,14 @@ if __name__ == "__main__":
         api_key = open(key_file).read().strip()
 
     openai.api_key = api_key
-
     document_embeddings = get_document_embeddings()
-    x = order_document_sections_by_query_similarity("How should I get an engineering executive job?", document_embeddings)[:5]
-    print(x)
 
+    prompts = [
+        "What do staff engineers do?",        
+        "How should I get an engineering executive job?",
 
-    #max_dim = max([int(c) for c in df.columns if c != "title" and c != "heading"])
-    #return {
-    #(r.title, r.heading): [r[str(i)] for i in range(max_dim + 1)] for _, r in df.iterrows()
+    ]
 
-
-    #resp = ask_prompt("What are 10 things I should do on a sunny day in San Francisco?")
-    #print(resp)
+    for prompt in prompts[:1]:
+        resp = ask_contextful_prompt(prompt, document_embeddings)
+        print(resp)
