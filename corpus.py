@@ -7,28 +7,26 @@ import tiktoken
 import re
 
 
-COMPLETIONS_MODEL = "text-davinci-003"
+COMPLETIONS_MODEL = "gpt-3.5-turbo"  # You might find this faster, cheaper, and bigger context size (4,096 tokens)
 EMBEDDING_MODEL = "text-embedding-ada-002"
 MAX_EMBEDDINGS = 1536
 EMBEDDINGS_CACHE = None
 EMBEDDINGS_CACHE_FILE = "embeddings.pkl"
 EMBEDDINGS_CSV = "embeddings.csv"
-MAX_SECTION_LEN = 500
+MAX_SECTION_LEN = 500  # TODO: This can probably increase too
 SEPARATOR = "\n* "
-ENCODING = "gpt2"
 
 
 def ask_contextful_prompt(prompt, embeddings):
     print(f"supplied prompt: {prompt}")
     relevant = order_document_sections_by_query_similarity(prompt, embeddings)[:5]
-    relevant_str = "\t*" + ("\n\t*".join([str(x) for x in relevant]))
-    print(f"relevant embeddings:\n{relevant_str}")
+    print(f"relevant: {relevant}")
 
     chosen_sections = []
     chosen_sections_len = 0
     chosen_sections_indexes = []
 
-    encoding = tiktoken.get_encoding(ENCODING)
+    encoding = tiktoken.tiktoken.encoding_for_model(COMPLETIONS_MODEL)
     separator_len = len(encoding.encode(SEPARATOR))
 
     # I am doing something dumb with df.loc which is breaing,
@@ -51,6 +49,8 @@ def ask_contextful_prompt(prompt, embeddings):
     return ask_prompt(prompt, context="".join(chosen_sections))
 
 
+# These prompts can get very complicated. Here's an example of the prompt I'm using (and it's considered fairly basic
+# https://github.com/hwchase17/langchain/blob/master/langchain/chains/qa_with_sources/stuff_prompt.py
 def ask_prompt(prompt, context=None):
 
     context_str = ""
@@ -66,7 +66,7 @@ def ask_prompt(prompt, context=None):
     A:
     """
 
-    print("\n---\nfull prompt:\n",templated_prompt)
+    print("\n",templated_prompt)
 
     resp = openai.Completion.create(
         prompt=templated_prompt,
@@ -143,7 +143,8 @@ def get_all_embeddings():
         print("Couldn't read DF from disk", e)
 
     df = build_corpus()
-    embeddings = compute_doc_embeddings(df)
+    embeddings = compute_doc_embeddings(df)  # In this df, each row is a section? Do you have a sense of how big each section is? 
+    # I wonder if it would help to embed smaller chunks instead. (Chunk size of ~1,500 tokens work well for me.)
 
     cols = ('title', 'heading') + tuple(range(MAX_EMBEDDINGS))
     export_rows = []
@@ -218,7 +219,7 @@ def clean_entry(filepath):
             line = raw_line.strip()
             if ':' in line:
                 key, val = line.split(':', 1)
-                headings[key.strip()] = val.strip(" \"'")
+                headings[key] = val.strip(" \"'")
     else:
         body = raw
 
@@ -258,9 +259,9 @@ if __name__ == "__main__":
     document_embeddings = get_document_embeddings()
 
     prompts = [
-        "What do staff engineers do?",
-        "When should I promote internal candidates versus hiring externally?",
+        "When should I promote internal canidates versus hiring externally?",
         "How should I get an engineering executive job?",
+        "What do staff engineers do?",
     ]
 
     for prompt in prompts[:1]:
