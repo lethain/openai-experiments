@@ -1,3 +1,6 @@
+"""
+See https://lethain.com/openai-exploration/ for more background.
+"""
 import os
 import numpy as np
 import openai
@@ -16,8 +19,6 @@ EMBEDDINGS_CSV = "embeddings.csv"
 MAX_SECTION_LEN = 1000
 SEPARATOR = "\n* "
 ENCODING = "gpt2"
-
-
 
 
 def ask_contextful_prompt(prompt, embeddings):
@@ -81,6 +82,7 @@ def vector_similarity(x: list[float], y: list[float]) -> float:
     Because OpenAI Embeddings are normalized to length 1, the cosine similarity is the same as the dot product.
     """
     return np.dot(np.array(x), np.array(y))
+
 
 def order_document_sections_by_query_similarity(query: str, contexts: dict[(str, str), np.array]) -> list[(float, (str, str))]:
     """
@@ -257,17 +259,11 @@ if __name__ == "__main__":
     openai.api_key = api_key
     document_embeddings = get_document_embeddings()
 
-    prompts = [
-        "What do staff engineers do?",
-        "When should I promote internal candidates versus hiring externally?",
-        "How should I get an engineering executive job?",
-    ]
+    prompt = "What do staff engineers do?"
+    resp = ask_contextful_prompt(prompt, document_embeddings)
 
-    for prompt in prompts[:1]:
-        resp = ask_contextful_prompt(prompt, document_embeddings)
-
-        max_chars = 100
-        splits = [resp[i:i+max_chars] for i in range(0, len(resp), max_chars)]
-        for split in splits:
-            print(split)
-        print('\n\n')
+    max_chars = 100
+    splits = [resp[i:i+max_chars] for i in range(0, len(resp), max_chars)]
+    for split in splits:
+        print(split)
+    print('\n\n')
