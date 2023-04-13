@@ -19,8 +19,9 @@ ENCODING = "gpt2"
 
 
 def ask_contextful_prompt(prompt, embeddings):
+    print(f"supplied prompt: {prompt}")
     relevant = order_document_sections_by_query_similarity(prompt, embeddings)[:5]
-    print("relevant", relevant)
+    print(f"relevant: {relevant}")
 
     chosen_sections = []
     chosen_sections_len = 0
@@ -33,10 +34,9 @@ def ask_contextful_prompt(prompt, embeddings):
     # so just working around with this for simplicity sake,
     # probably because I was doing something silly earlier but tbh
     # don't feel like reworking it :-)
-    df_context = build_corpus()    
+    df_context = build_corpus()
     by_key = { (r.title, r.heading): r for _, r in df_context.iterrows()}
 
-    
     for _, section_index in relevant:
         # Add contexts until we run out of space.
         document_section = by_key[section_index]
@@ -46,7 +46,7 @@ def ask_contextful_prompt(prompt, embeddings):
             break
         chosen_sections.append(SEPARATOR + document_section.content.replace("\n", " "))
         chosen_sections_indexes.append(str(section_index))
-        
+
     return ask_prompt(prompt, context="".join(chosen_sections))
 
 
@@ -55,7 +55,7 @@ def ask_prompt(prompt, context=None):
     context_str = ""
     if context:
         context_str = f"\nContext:\n {context}"
-    
+
     templated_prompt = f"""Answer the question as truthfully as possible, and if you're unsure of the answer, say "Sorry, I don't know".
     {context_str}
 
@@ -65,7 +65,7 @@ def ask_prompt(prompt, context=None):
     A:
     """
 
-    print(templated_prompt)
+    print("\n",templated_prompt)
 
     resp = openai.Completion.create(
         prompt=templated_prompt,
@@ -94,7 +94,7 @@ def order_document_sections_by_query_similarity(query: str, contexts: dict[(str,
     document_similarities = sorted([
         (vector_similarity(query_embedding, doc_embedding), doc_index) for doc_index, doc_embedding in contexts.items()
     ], reverse=True)
-    
+
     return document_similarities
 
 
@@ -177,7 +177,7 @@ def get_embedding(text: str, model: str=EMBEDDING_MODEL) -> list[float]:
             pickle.dump(EMBEDDINGS_CACHE, embedding_cache_file)
 
     return EMBEDDINGS_CACHE[key]
-    
+
 
 def compute_doc_embeddings(df: pd.DataFrame) -> dict[tuple[str, str], list[float]]:
     """
@@ -257,9 +257,9 @@ if __name__ == "__main__":
     document_embeddings = get_document_embeddings()
 
     prompts = [
-        "What do staff engineers do?",        
+        "When should I promote internal canidates versus hiring externally?",
         "How should I get an engineering executive job?",
-
+        "What do staff engineers do?",
     ]
 
     for prompt in prompts[:1]:
