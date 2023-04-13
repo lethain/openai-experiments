@@ -18,6 +18,8 @@ SEPARATOR = "\n* "
 ENCODING = "gpt2"
 
 
+
+
 def ask_contextful_prompt(prompt, embeddings):
     print(f"supplied prompt: {prompt}")
     relevant = order_document_sections_by_query_similarity(prompt, embeddings)[:5]
@@ -58,13 +60,17 @@ def ask_prompt(prompt, context=None):
         context_str = f"\nContext:\n {context}"
 
     messages = [
-        {"role": "system", "content": "Answer the question as truthfully as possible, and if you're unsure of the answer, say 'Sorry, I don't know'. Cite your sources"},
+        {"role": "system", "content": "Answer the question as truthfully as possible, and if you're unsure of the answer, say 'Sorry, I don't know'. Cite your sources."},
         {"role": "assistant", "content": context_str},
         {"role": "user", "content": prompt},
     ]
+    print("## Messages:")
+    for message in messages:
+        role = message['role']
+        content = message['content']
+        print(f"[{role}]: {content}\n ")
 
     resp = openai.ChatCompletion.create(messages=messages, model=COMPLETIONS_MODEL)
-    print(resp)
     return resp['choices'][0]["message"]["content"]
 
 
@@ -120,7 +126,7 @@ def build_corpus():
                 }
                 rows.append(row)
         except Exception as e:
-            print(filepath, e)
+            print(f"{filepath}, {e}")
 
     df = pd.DataFrame(rows, columns=['title', 'heading', 'content'])
     return df
@@ -132,7 +138,7 @@ def get_all_embeddings():
         df.set_index(["title", "heading"])
         return df
     except Exception as e:
-        print("Couldn't read DF from disk", e)
+        print(f"Couldn't read DF from disk: {e}")
 
     df = build_corpus()
     # TODO: consider reducing size of doc embeddings
@@ -189,7 +195,7 @@ def compute_doc_embeddings(df: pd.DataFrame) -> dict[tuple[str, str], list[float
             }
             rows.append(row)
         except openai.error.InvalidRequestError as ire:
-            print(r.title, r.heading, ire)
+            print(f"{r.title}, {r.heading}, {ire}")
 
     return rows
 
@@ -259,4 +265,9 @@ if __name__ == "__main__":
 
     for prompt in prompts[:1]:
         resp = ask_contextful_prompt(prompt, document_embeddings)
-        print(resp)
+
+        max_chars = 100
+        splits = [resp[i:i+max_chars] for i in range(0, len(resp), max_chars)]
+        for split in splits:
+            print(split)
+        print('\n\n')
